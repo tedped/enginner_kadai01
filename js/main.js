@@ -9,34 +9,36 @@ const state = {
 
 const elevator = document.querySelector("#elevator");
 
-// エレベーターの高さ（単位はpx,現在は5階建て、シャフトは300px）
-const FLOOR_HEIGHT = 60;
+// ここを変えるだけで階数変更可能
+const FLOOR_COUNT = 6;
 
+// ボタンを入れる親要素
+const buttonsContainer = document.querySelector("#buttons");
+// エレベーターの高さ（単位はpx）
+const FLOOR_HEIGHT = 30;
 //エレベーターの移動速度（単位はms）
 const TIME_PER_FLOOR = {
-  normal: 800,
-  fast: 400,
+  normal: 250,
+  fast: 150,
 };
 
-//エレベーターの階数を変化させる関数
-const moveTo = async (floor) => {
-  if (state.moving) return;
-
+//エレベーターの階数を推移させる関数
+const moveOneFloor = async (nextFloor) => {
   state.moving = true;
   closeDoor();
 
-  //closeDoorの状態遷移が完了してからエレベーターが移動開始するための待機時間
-  await wait(500);
+  //エレベーターの状態遷移が完了してから移動開始するための待機時間
+  await wait(5);
 
-  const distance = Math.abs(state.currentFloor - floor);
+  const distance = Math.abs(state.currentFloor - nextFloor);
   const duration = distance * TIME_PER_FLOOR.normal;
 
   elevator.style.transition = ` bottom ${duration}ms linear`;
-  elevator.style.bottom = `${(floor - 1) * FLOOR_HEIGHT}px`;
+  elevator.style.bottom = `${(nextFloor - 1) * FLOOR_HEIGHT}px`;
 
   await wait(duration);
 
-  state.currentFloor = floor;
+  state.currentFloor = nextFloor;
   state.moving = false;
 };
 
@@ -53,6 +55,13 @@ const closeDoor = () => {
 //エレベーターの状態遷移に時間がかかることを表現するための関数
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const renderButtons = () => {
+  document.querySelectorAll("button").forEach((btn) => {
+    const floor = Number(btn.dataset.floor);
+    btn.classList.toggle("waiting", state.queue.includes(floor));
+  });
+};
+
 //処理されていないボタン操作をリクエストとしてキューに追加する関数
 //記録
 const addRequest = (floor) => {
@@ -68,56 +77,52 @@ const decideDirection = (from, to) => {
   return "idle";
 };
 
-//現在のリクエストと進行方向に基づき、移動方向に最も近い階を選択して返す関数
+//現在の進行方向に基づき、次の階を返す関数
 const getNextFloor = () => {
-  if (state.queue.length === 0) return null;
-
-  //上方向へ移動中は、現在地から上方向のリクエストを対象に、最も近い階を選択して返す
   if (state.direction === "up") {
-    const ups = state.queue.filter((f) => f > state.currentFloor);
-    if (ups.length > 0) {
-      return Math.min(...ups);
-    }
+    return state.currentFloor + 1;
   }
-
-  //下方向へ移動中は、現在地から下方向のリクエストを対象に、最も近い階を選択して返す
   if (state.direction === "down") {
-    const downs = state.queue.filter((f) => f < state.currentFloor);
-    if (downs.length > 0) {
-      return Math.max(...downs);
-    }
+    return state.currentFloor - 1;
   }
-
-  // idle または該当なし → 最初のリクエスト
-  return state.queue[0];
+  return null;
 };
 
 //キューに蓄積されたリクエストが実行中か判定し、処理ループが同時に複数起動しないようにするための制御フラグ
 //すでにリクエストされている階を重複してリクエストすることのないようにする
 let processing = false;
 
-//キューに追加された順に数値をmoveToに渡し、エレベーターの移動をリクエスト順に処理する関数
+//エレベーターの移動を処理する関数
 //制御
 const processQueue = async () => {
   if (processing) return;
   processing = true;
 
   while (state.queue.length > 0) {
+    // direction は最初だけ決める
+    if (state.direction === "idle") {
+      const target = state.queue[0];
+      state.direction = decideDirection(state.currentFloor, target);
+    }
+
     const next = getNextFloor();
     if (next == null) break;
 
-    // direction は最初だけ決める
-    if (state.direction === "idle") {
-      state.direction = decideDirection(state.currentFloor, next);
+    await moveOneFloor(next);
+
+    //現在の階がキューに含まれていれば乗降処理を行う
+    if (state.queue.includes(state.currentFloor)) {
+      // 移動前にキューから削除、重複防止
+      state.queue = state.queue.filter((f) => f !== state.currentFloor);
+      renderButtons(); //キューから削除されたボタンの表示を更新
+
+      await moveOneFloor(next);
+      await wait(700);
+      openDoor();
+      await wait(2000);
+      closeDoor();
+      await wait(700);
     }
-
-    // 移動前にキューから削除、重複防止
-    state.queue = state.queue.filter((f) => f !== next);
-
-    await moveTo(next);
-    openDoor();
-    await wait(500);
-    closeDoor();
 
     //進行方向にリクエストがまだあるか確認
     const hasSameDirectionTarget =
@@ -134,11 +139,21 @@ const processQueue = async () => {
 
   processing = false;
 };
+buttonsContainer.innerHTML = "";
+// ボタンを自動生成
+for (let i = FLOOR_COUNT; i >= 1; i--) {
+  // 上から下に並べる場合
+  const btn = document.createElement("button");
+  btn.textContent = `${i}`;
+  btn.dataset.floor = i;
+  buttonsContainer.appendChild(btn);
+  shaftHeight = FLOOR_COUNT * FLOOR_HEIGHT;
+  document.querySelector(".shaft").style.height = `${shaftHeight}px`;
 
-//エレベーターのボタンを押したら、押したボタンの階数を数値としてaddRequestに渡し、キューを実行
-document.querySelectorAll("button").forEach((btn) => {
+  //エレベーターのボタンを押したら、押したボタンの階数を数値としてaddRequestに渡し、キューを実行
   btn.addEventListener("click", () => {
-    addRequest(Number(btn.dataset.floor)); //記録
+    addRequest(i); //記録
+    renderButtons(); //キューに記録されたボタンの表示を更新
     processQueue(); //制御を実行
   });
-});
+}
