@@ -12,17 +12,22 @@ body {
 
 .shaft {
   position: relative;
+  /* height:`${shaftHeight}px`; */
   width: 100px;
-  height: 900px;
   border: 2px solid #333;
-  margin-bottom: 20px;
+}
+
+#elevators {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
 }
 
 .elevator {
   position: absolute;
-  bottom: 0;
   width: 100%;
   height: 30px;
+  bottom: 0px;
   background: #555;
   transition: bottom 0.8s linear;
 }
@@ -38,6 +43,7 @@ body {
 
 .door.left {
   left: 0;
+  z-index: 9999;
 }
 
 .door.right {
@@ -52,11 +58,18 @@ body {
   transform: translateX(100%);
 }
 
+#hi {
+  position: absolute;
+  top: 7px;
+  left: 11px;
+  z-index: 1;
+}
+
 #buttons {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 10px;
   height: 200px;
+  gap: 10px;
 }
 
 #buttons button {
