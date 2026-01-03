@@ -5,7 +5,7 @@ const ELEVATOR_COUNT = 5;
 // ここを変えるだけで階数を増減可能
 const FLOOR_COUNT = 26;
 // エレベーターの高さ（単位はpx）
-const FLOOR_HEIGHT = 30;
+const FLOOR_HEIGHT = 42.2;
 //エレベーターの移動速度（単位はms）
 const TIME_PER_FLOOR = {
   normal: 250,
@@ -16,10 +16,34 @@ const TIME_PER_FLOOR = {
 const elevatorsContainer = document.querySelector("#elevators");
 const elevators = [];
 // ボタンを入れる親要素
-const buttonsContainer = document.querySelector("#buttons");
+// const buttonsContainer = document.querySelector("#buttons");
 
+// 外ボタンを生成
+const externalContainer = document.querySelector("#external-buttons");
+const externalRequests = [];
+externalContainer.textContent = "";
+
+for (let f = FLOOR_COUNT; f >= 1; f--) {
+  const row = document.createElement("div");
+  row.className = "external-floor";
+
+  const label = document.createElement("div");
+  label.textContent = f;
+
+  const upBtn = document.createElement("button");
+  upBtn.textContent = "⬆️";
+  upBtn.disabled = f === FLOOR_COUNT;
+
+  const downBtn = document.createElement("button");
+  downBtn.textContent = "⬇️";
+  downBtn.disabled = f === 1;
+
+  row.append(label, upBtn, downBtn);
+  externalContainer.appendChild(row);
+}
+
+// 各エレベーターのDOMとstate及び内ボタンパネルを生成
 elevatorsContainer.textContent = "";
-// 各エレベーターのDOMとstateを生成
 for (let i = 0; i < ELEVATOR_COUNT; i++) {
   const shaftEl = document.createElement("div");
   shaftEl.classList.add("shaft");
@@ -27,6 +51,24 @@ for (let i = 0; i < ELEVATOR_COUNT; i++) {
   const elevatorEl = document.createElement("div");
   elevatorEl.classList.add("elevator");
   elevatorEl.style.bottom = "0px";
+
+  const panel = document.createElement("div");
+  panel.classList.add("panel");
+
+  for (let f = FLOOR_COUNT; f >= 1; f--) {
+    const btn = document.createElement("button");
+    btn.textContent = f;
+    btn.dataset.floor = f;
+
+    btn.addEventListener("click", async () => {
+      const e = elevators[i]; //選択したエレベーターの状態オブジェクトを取得
+      await addRequest(e, f); //選択したエレベーターをキューに記録
+      renderInnerButtons(e, e.panel); //キューに記録されたボタンの、点灯表示を更新
+      processElevatorQueue(e); //制御を実行
+    });
+
+    panel.appendChild(btn);
+  }
 
   const leftDoor = document.createElement("div");
   leftDoor.className = "door left";
@@ -36,12 +78,15 @@ for (let i = 0; i < ELEVATOR_COUNT; i++) {
 
   const hi = document.createElement("div");
   hi.textContent = "🥸";
-  hi.id = "hi";
+  hi.className = "hi";
+
+  const elevatorSet = document.createElement("div");
+  elevatorSet.className = "elevator-set";
 
   elevatorEl.append(leftDoor, rightDoor, hi);
-
-  shaftEl.appendChild(elevatorEl);
-  elevatorsContainer.appendChild(shaftEl);
+  shaftEl.append(elevatorEl);
+  elevatorSet.append(shaftEl, panel);
+  elevatorsContainer.append(elevatorSet);
 
   //エレベーターの状態を管理するオブジェクトを配列に追加
   elevators.push({
@@ -51,9 +96,10 @@ for (let i = 0; i < ELEVATOR_COUNT; i++) {
     direction: "idle",
     queue: [],
     element: elevatorEl,
-    processing: false,
+    processing: false, //キューに蓄積されたリクエストが実行中か判定し、処理ループが同時に複数起動しないようにするための制御フラグ
     door: "closed",
     doorBusy: false,
+    panel,
   });
 }
 
@@ -64,19 +110,19 @@ document.querySelectorAll(".shaft").forEach((shaft) => {
 });
 
 //移動距離の最も小さい、最適なエレベーターを選択する関数
-const selectElevator = (floor) => {
-  let best = elevators[0];
-  let bestDistance = Infinity;
+// const selectElevator = (floor) => {
+//   let best = elevators[0];
+//   let bestDistance = Infinity;
 
-  for (const e of elevators) {
-    const distance = Math.abs(e.currentFloor - floor);
-    if (!e.moving && distance < bestDistance) {
-      best = e;
-      bestDistance = distance;
-    }
-  }
-  return best;
-};
+//   for (const e of elevators) {
+//     const distance = Math.abs(e.currentFloor - floor);
+//     if (!e.moving && distance < bestDistance) {
+//       best = e;
+//       bestDistance = distance;
+//     }
+//   }
+//   return best;
+// };
 
 //エレベーターの状態遷移に時間がかかることを表現するための関数
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -150,17 +196,12 @@ const getNextFloor = (elevatorState) => {
 };
 
 //キューに追加されたリクエストに基づき、ボタンの点灯表示状態を更新する関数
-const renderButtons = () => {
-  document.querySelectorAll("button").forEach((btn) => {
+const renderInnerButtons = (elevatorState, panelEl) => {
+  panelEl.querySelectorAll("button").forEach((btn) => {
     const floor = Number(btn.dataset.floor);
-    const waiting = elevators.some((e) => e.queue.includes(floor));
-    btn.classList.toggle("waiting", waiting);
+    btn.classList.toggle("waiting", elevatorState.queue.includes(floor));
   });
 };
-
-//キューに蓄積されたリクエストが実行中か判定し、処理ループが同時に複数起動しないようにするための制御フラグ
-//すでにリクエストされている階を重複してリクエストすることのないようにする
-let processing = false;
 
 //エレベーターの移動を処理する関数
 //制御
@@ -194,7 +235,7 @@ const processElevatorQueue = async (elevatorState) => {
       elevatorState.queue = elevatorState.queue.filter(
         (f) => f !== elevatorState.currentFloor
       );
-      renderButtons(); //キューから削除されたボタンの、点灯表示を更新
+      renderInnerButtons(elevatorState, elevatorState.panel); //キューから削除されたボタンの、点灯表示を更新
 
       await openAndCloseDoor(elevatorState);
     }
@@ -215,20 +256,20 @@ const processElevatorQueue = async (elevatorState) => {
   elevatorState.processing = false;
 };
 
-buttonsContainer.textContent = "";
+// buttonsContainer.textContent = "";
 // ボタンを自動生成
-for (let i = FLOOR_COUNT; i >= 1; i--) {
-  // 上から下に並べる
-  const btn = document.createElement("button");
-  btn.textContent = `${i}`;
-  btn.dataset.floor = i;
-  buttonsContainer.appendChild(btn);
+// for (let i = FLOOR_COUNT; i >= 1; i--) {
+//   // 上から下に並べる
+//   // const btn = document.createElement("button");
+//   // btn.textContent = `${i}`;
+//   // btn.dataset.floor = i;
+//   // buttonsContainer.appendChild(btn);
 
-  //エレベーターのボタンを押したら、押したボタンの階数を数値としてaddRequestに渡し、キューを実行
-  btn.addEventListener("click", async () => {
-    const e = selectElevator(i); //最適なエレベーターを選択
-    await addRequest(e, i); //選択したエレベーターをキューに記録
-    renderButtons(); //キューに記録されたボタンの、点灯表示を更新
-    processElevatorQueue(e); //制御を実行
-  });
-}
+//   //エレベーターのボタンを押したら、押したボタンの階数を数値としてaddRequestに渡し、キューを実行
+//   btn.addEventListener("click", async () => {
+//     const e = selectElevator(i); //最適なエレベーターを選択
+//     await addRequest(e, i); //選択したエレベーターをキューに記録
+//     renderInnerButtons(e, e.panel); //キューに記録されたボタンの、点灯表示を更新
+//     processElevatorQueue(e); //制御を実行
+//   });
+// }
