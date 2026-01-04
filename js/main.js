@@ -1,3 +1,19 @@
+import { BuildingController } from "./buildingController.js";
+
+// // elevators はあなたが既に作っている state 配列
+// const building = new BuildingController({
+//   elevators,
+//   floorCount: FLOOR_COUNT,
+// });
+
+// // 外ボタン（例）
+// upButton.addEventListener("click", () => {
+//   building.requestFromOutside({
+//     floor: 5,
+//     direction: "up",
+//   });
+// });
+
 //エレベーターの初期状態
 
 // ここを変えるだけで台数を増減可能
@@ -228,6 +244,8 @@ const processElevatorQueue = async (elevatorState) => {
     if (next == null) break;
 
     await moveOneFloor(elevatorState, next);
+
+    buildingController.pickupOutsideRequests(elevatorState);
 
     //現在の階がキューに含まれていれば乗降処理を行う
     if (elevatorState.queue.includes(elevatorState.currentFloor)) {
